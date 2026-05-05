@@ -1,0 +1,50 @@
+const twilio = require('twilio');
+const config = require('../config');
+
+function createClient() {
+  if (!config.twilioAccountSid || !config.twilioAuthToken) {
+    throw new Error('Twilio credentials are missing');
+  }
+
+  return twilio(config.twilioAccountSid, config.twilioAuthToken);
+}
+
+async function makeOutboundCall(toNumber) {
+  if (!config.twilioPhoneNumber) {
+    throw new Error('TWILIO_PHONE_NUMBER is missing');
+  }
+
+  const publicBaseUrl = (config.publicUrl || '').replace(/\/$/, '');
+  if (!publicBaseUrl) {
+    throw new Error('PUBLIC_URL is not set – cannot create outbound call without a reachable webhook URL');
+  }
+
+  const to = toNumber || '+917845310959';
+  const client = createClient();
+
+  return client.calls.create({
+    to,
+    from: config.twilioPhoneNumber,
+    url: `${publicBaseUrl}/api/call/incoming`,
+    method: 'POST'
+  });
+}
+
+// Call multiple numbers at once
+async function makeMultipleCalls(numbers) {
+  const results = [];
+  for (const num of numbers) {
+    try {
+      const call = await makeOutboundCall(num);
+      results.push({ to: num, success: true, callSid: call.sid });
+    } catch (err) {
+      results.push({ to: num, success: false, error: err.message });
+    }
+  }
+  return results;
+}
+
+module.exports = {
+  makeOutboundCall,
+  makeMultipleCalls
+};
