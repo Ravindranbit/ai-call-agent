@@ -29,7 +29,10 @@ async function makeOutboundCall(toNumber) {
     to,
     from: config.twilioPhoneNumber,
     url: `${publicBaseUrl}/api/call/incoming`,
-    method: 'POST'
+    method: 'POST',
+    statusCallback: `${publicBaseUrl}/api/call/status`,
+    statusCallbackMethod: 'POST',
+    statusCallbackEvent: ['completed', 'canceled', 'failed', 'busy', 'no-answer']
   });
 }
 
