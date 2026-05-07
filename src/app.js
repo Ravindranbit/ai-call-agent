@@ -10,6 +10,9 @@ const redisClient = require('./utils/redisClient');
 
 const app = express();
 
+// Trust reverse proxy (required for rate limiter to work correctly behind Render/Cloudflare)
+app.set('trust proxy', 1);
+
 // Twilio sends application/x-www-form-urlencoded requests for webhooks
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());

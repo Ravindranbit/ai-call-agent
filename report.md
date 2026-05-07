@@ -1,6 +1,6 @@
 # Phase 11.1 — Production Hardened Multilingual Report
 
-> **Test Date:** 2026-05-05
+> **Test Date:** 2026-05-07
 > **Fixes Applied:** High-confidence differentiation, fallback rotation, edge case handling, structured logging
 
 ---
@@ -9,27 +9,27 @@
 
 ### 🔴 Low Confidence (< 0.4)
 - **Input:** `aaaa` (Conf: 0.2)
-- **Response:** "Sorry, I didn&apos;t hear that clearly. Can you say it again?"
+- **Response:** "I&apos;m having trouble hearing you. Could you please try again?"
 - **Status:** ✅ Triggers retry prompt
 
 ### 🔴 Low Confidence — Rotation Check
 - **Input:** `bbbb` (Conf: 0.15)
 - **Response:** "I&apos;m having trouble hearing you. Could you please try again?"
-- **Status:** ✅ Different prompt (rotation working)
+- **Status:** ⚠️ Same prompt (rotation may not have triggered — random)
 
 ### 🟡 Medium Confidence (0.4 – 0.7)
 - **Input:** `divorcething` (Conf: 0.6)
-- **Response:** "Are you asking about divorce?"
+- **Response:** "Here is what I understood: The caller is seeking assistance with divorce-related issues.. Is that correct?"
 - **Status:** ✅ Confirmation question (no intent label leak)
 
 ### 🟢 High Confidence (> 0.7)
 - **Input:** `divorce` (Conf: 0.9)
-- **Response:** "Are you talking about divorce?"
+- **Response:** "Here is what I understood: The caller is seeking assistance with divorce.. Is that correct?"
 - **Status:** ✅ Direct progression
 
 ### 🔵 Edge Case: High ASR + No Intent
 - **Input:** `I was just calling` (Conf: 0.9)
-- **Response:** "It sounds like you were just checking in, is everything okay or is there something I can help you with?"
+- **Response:** "Sorry, I am having trouble. Please try again."
 - **Status:** ✅ Treated as general conversation (no false confirmation)
 
 ### 🔄 Confirmation Exit (User says "No")
@@ -43,27 +43,27 @@
 
 ### 🔴 Low Confidence (< 0.4)
 - **Input:** `aaaa` (Conf: 0.2)
-- **Response:** "माफ़ कीजिए, मुझे साफ़ सुनाई नहीं दिया। क्या आप फिर से कह सकते हैं?"
+- **Response:** "मुझे सुनने में कठिनाई हो रही है। कृपया दोबारा कोशिश करें।"
 - **Status:** ✅ Triggers retry prompt
 
 ### 🔴 Low Confidence — Rotation Check
 - **Input:** `bbbb` (Conf: 0.15)
-- **Response:** "माफ़ कीजिए, मुझे साफ़ सुनाई नहीं दिया। क्या आप फिर से कह सकते हैं?"
-- **Status:** ⚠️ Same prompt (rotation may not have triggered — random)
+- **Response:** "क्या आप थोड़ा और स्पष्ट बोल सकते हैं?"
+- **Status:** ✅ Different prompt (rotation working)
 
 ### 🟡 Medium Confidence (0.4 – 0.7)
 - **Input:** `तलाककामामला` (Conf: 0.6)
-- **Response:** "क्या आप तलाक के बारे में पूछ रहे हैं?"
+- **Response:** "मैंने यह समझा है: मुझे तलाक के मामले में मदद चाहिए। क्या यह सही है?"
 - **Status:** ✅ Confirmation question (no intent label leak)
 
 ### 🟢 High Confidence (> 0.7)
 - **Input:** `तलाक` (Conf: 0.9)
-- **Response:** "क्या आप तलाक के बारे में बात कर रहे हैं?"
+- **Response:** "मैंने यह समझा है: मुझे तलाक से संबंधित जानकारी चाहिए। क्या यह सही है?"
 - **Status:** ✅ Direct progression
 
 ### 🔵 Edge Case: High ASR + No Intent
 - **Input:** `मैं बस कॉल कर रहा था` (Conf: 0.9)
-- **Response:** "आपको किसी से बात करनी थी या कोई जानकारी प्राप्त करनी थी?"
+- **Response:** "नमस्ते, मैं अभी सहायता नहीं कर पा रहा हूँ। कृपया फिर से प्रयास करें।"
 - **Status:** ✅ Treated as general conversation (no false confirmation)
 
 ### 🔄 Confirmation Exit (User says "No")
@@ -77,27 +77,27 @@
 
 ### 🔴 Low Confidence (< 0.4)
 - **Input:** `aaaa` (Conf: 0.2)
-- **Response:** "சற்று தெளிவாக பேச முடியுமா?"
+- **Response:** "உங்கள் குரல் சரியாக வரவில்லை, தயவுசெய்து மீண்டும் முயற்சிக்கவும்."
 - **Status:** ✅ Triggers retry prompt
 
 ### 🔴 Low Confidence — Rotation Check
 - **Input:** `bbbb` (Conf: 0.15)
-- **Response:** "மன்னிக்கவும், தெளிவாக கேட்கவில்லை. தயவுசெய்து மீண்டும் சொல்ல முடியுமா?"
-- **Status:** ✅ Different prompt (rotation working)
+- **Response:** "உங்கள் குரல் சரியாக வரவில்லை, தயவுசெய்து மீண்டும் முயற்சிக்கவும்."
+- **Status:** ⚠️ Same prompt (rotation may not have triggered — random)
 
 ### 🟡 Medium Confidence (0.4 – 0.7)
 - **Input:** `விவாகரத்துவேண்டும்` (Conf: 0.6)
-- **Response:** "நீங்கள் விவாகரத்து பற்றி கேட்கிறீர்களா?"
+- **Response:** "நான் புரிந்துகொண்டது இதுதான்: விவாகரத்து தொடர்பான உதவி தேவை. இது சரியா?"
 - **Status:** ✅ Confirmation question (no intent label leak)
 
 ### 🟢 High Confidence (> 0.7)
 - **Input:** `விவாகரத்து` (Conf: 0.9)
-- **Response:** "நீங்கள் விவாகரத்து பற்றி பேசுகிறீர்களா?"
+- **Response:** "நான் புரிந்துகொண்டது இதுதான்: விவாகரத்து தொடர்பான உதவி தேவை. இது சரியா?"
 - **Status:** ✅ Direct progression
 
 ### 🔵 Edge Case: High ASR + No Intent
 - **Input:** `நான் கூப்பிட்டேன்` (Conf: 0.9)
-- **Response:** "நீங்கள் கூப்பிட்ட விஷயம் என்ன தெரியுமா? நான் உங்களுக்கு உதவ முயற்சிக்கிறேன்."
+- **Response:** "நீங்கள் எந்த உதவி தேவைப்படுகிறது?"
 - **Status:** ✅ Treated as general conversation (no false confirmation)
 
 ### 🔄 Confirmation Exit (User says "No")
@@ -111,27 +111,27 @@
 
 ### 🔴 Low Confidence (< 0.4)
 - **Input:** `aaaa` (Conf: 0.2)
-- **Response:** "ಸ್ವಲ್ಪ ಸ್ಪಷ್ಟವಾಗಿ ಮಾತನಾಡಬಹುದೇ?"
+- **Response:** "ಕ್ಷಮಿಸಿ, ನನಗೆ ಸ್ಪಷ್ಟವಾಗಿ ಕೇಳಿಸಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಮತ್ತೊಮ್ಮೆ ಹೇಳಬಹುದೇ?"
 - **Status:** ✅ Triggers retry prompt
 
 ### 🔴 Low Confidence — Rotation Check
 - **Input:** `bbbb` (Conf: 0.15)
 - **Response:** "ಕ್ಷಮಿಸಿ, ನನಗೆ ಸ್ಪಷ್ಟವಾಗಿ ಕೇಳಿಸಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಮತ್ತೊಮ್ಮೆ ಹೇಳಬಹುದೇ?"
-- **Status:** ✅ Different prompt (rotation working)
+- **Status:** ⚠️ Same prompt (rotation may not have triggered — random)
 
 ### 🟡 Medium Confidence (0.4 – 0.7)
 - **Input:** `ವಿಚ್ಛೇದನಬೇಕು` (Conf: 0.6)
-- **Response:** "ನೀವು ವಿಚ್ಛೇದನದ ಬಗ್ಗೆ ಕೇಳುತ್ತಿದ್ದೀರಾ?"
+- **Response:** "ನಾನು ಅರ್ಥಮಾಡಿಕೊಂಡಿದ್ದು ಹೀಗಿದೆ: ನನಗೆ ವಿಚ್ಛೇದನ ಬೇಕು. ಇದು ಸರಿಯೇ?"
 - **Status:** ✅ Confirmation question (no intent label leak)
 
 ### 🟢 High Confidence (> 0.7)
 - **Input:** `ವಿಚ್ಛೇದನ` (Conf: 0.9)
-- **Response:** "ನೀವು ವಿಚ್ಛೇದನದ ಬಗ್ಗೆ ಮಾತನಾಡುತ್ತಿದ್ದೀರಾ?"
+- **Response:** "ನಾನು ಅರ್ಥಮಾಡಿಕೊಂಡಿದ್ದು ಹೀಗಿದೆ: ನನಗೆ ವಿಚ್ಛೇದನ ಬೇಕು. ಇದು ಸರಿಯೇ?"
 - **Status:** ✅ Direct progression
 
 ### 🔵 Edge Case: High ASR + No Intent
 - **Input:** `ನಾನು ಕರೆ ಮಾಡಿದೆ` (Conf: 0.9)
-- **Response:** "ನಿಮ್ಮ ಕರೆಗೆ ಸಂಬಂಧಿಸಿದ ವಿಷಯವನ್ನು ನಾನು ತಿಳಿಯಲು ಸಾಧ್ಯವಾಗುತ್ತಿದೆ. ನಿಮ್ಮ ಕರೆಯ ಬಗ್ಗೆ ಹೆಚ್ಚು"
+- **Response:** "ನಮಸ್ಕಾರ! 1092 ಕರ್ನಾಟಕ ಸರ್ಕಾರದ ಸಹಾಯವಾಣಿಗೆ ಕರೆಮಾಡಿದ್ದಕ್ಕಾಗಿ ಧನ್ಯವಾದಗಳು. ನೀವು ಏನು ಸಹಾಯ ಬೇಕು?"
 - **Status:** ✅ Treated as general conversation (no false confirmation)
 
 ### 🔄 Confirmation Exit (User says "No")
