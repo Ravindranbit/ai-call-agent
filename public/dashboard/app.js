@@ -406,6 +406,55 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('menuToggle').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
   document.getElementById('refreshAgent')?.addEventListener('click', loadLiveCalls);
 
+  // Dialer Logic
+  document.getElementById('makeCallBtn')?.addEventListener('click', async () => {
+    const phoneInput = document.getElementById('outboundPhoneInput').value.trim();
+    const statusMsg = document.getElementById('callStatusMessage');
+    const btn = document.getElementById('makeCallBtn');
+    
+    if (!phoneInput) {
+      statusMsg.textContent = 'Please enter a phone number';
+      statusMsg.style.color = 'var(--red)';
+      return;
+    }
+    
+    // Auto-format: if no + is provided, assume India +91
+    let formattedPhone = phoneInput;
+    if (!formattedPhone.startsWith('+')) {
+      formattedPhone = '+91' + formattedPhone;
+    }
+    
+    statusMsg.textContent = 'Initiating call...';
+    statusMsg.style.color = 'var(--text-muted)';
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
+
+    try {
+      const res = await fetch(`/api/call/make?to=${encodeURIComponent(formattedPhone)}`, { method: 'POST' });
+      const data = await res.json();
+      
+      if (data.success) {
+        statusMsg.textContent = '✓ Call connected! Monitor below.';
+        statusMsg.style.color = 'var(--green)';
+        document.getElementById('outboundPhoneInput').value = '';
+        setTimeout(() => loadLiveCalls(), 1500); // refresh live calls shortly after
+      } else {
+        statusMsg.textContent = 'Error: ' + (data.error || data.message || 'Failed to call');
+        statusMsg.style.color = 'var(--red)';
+      }
+    } catch (err) {
+      statusMsg.textContent = 'Network error occurred';
+      statusMsg.style.color = 'var(--red)';
+    }
+    
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    
+    setTimeout(() => {
+      if(statusMsg.textContent.includes('connected')) statusMsg.textContent = '';
+    }, 5000);
+  });
+
   loadAll();
   autoRefreshTimer = setInterval(() => {
     loadAll();
