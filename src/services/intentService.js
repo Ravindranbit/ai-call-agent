@@ -140,7 +140,7 @@ function detectIntent(input) {
   for (const intent of intentConfig) {
     for (const keyword of intent.keywords) {
       const score = scoreKeywordMatch(normalized, keyword.toLowerCase());
-      
+
       if (score > bestScore) {
         bestScore = score;
         bestIntent = intent;
