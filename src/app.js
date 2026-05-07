@@ -1,10 +1,12 @@
 const express = require('express');
 const path = require('path');
 const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
 const callRoutes = require('./routes/callRoutes');
 const callController = require('./controllers/callController');
 const db = require('./services/databaseService');
 const sessionStore = require('./utils/sessionStore');
+const redisClient = require('./utils/redisClient');
 
 const app = express();
 
@@ -12,6 +14,53 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(morgan('dev'));
+
+// ──────────────────────────────────────────────────────────────
+// RATE LIMITING — Tiered protection for different API groups
+// ──────────────────────────────────────────────────────────────
+
+// Twilio webhooks — high limit (Twilio sends many rapid callbacks)
+const twilioLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests from this IP, please try again later' }
+});
+
+// Dashboard APIs — moderate limit
+const dashboardLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Dashboard rate limit exceeded' }
+});
+
+// Agent APIs — stricter limit
+const agentLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Agent API rate limit exceeded' }
+});
+
+// Outbound call — very strict
+const outboundLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Outbound call rate limit exceeded' }
+});
+
+// Apply rate limiters
+app.use('/api/call/make', outboundLimiter);
+app.use('/api/call/make-all', outboundLimiter);
+app.use('/api/call', twilioLimiter);
+app.use('/api/dashboard', dashboardLimiter);
+app.use('/api/agent', agentLimiter);
 
 // Serve the dashboard static files
 app.use('/dashboard', express.static(path.join(__dirname, '..', 'public', 'dashboard')));
@@ -59,6 +108,16 @@ app.get('/api/dashboard/events', async (req, res) => {
   try {
     const stats = await db.getEventStats();
     res.json(stats || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Transcript endpoint for Quality Assurance
+app.get('/api/dashboard/calls/:callSid/transcript', async (req, res) => {
+  try {
+    const transcript = await db.getCallTranscript(req.params.callSid);
+    res.json({ count: transcript.length, transcript });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -120,6 +179,24 @@ app.get('/api/agent/feedback/stats', async (req, res) => {
 // ──────────────────────────────────────────────────────────────
 
 app.get('/', (req, res) => res.redirect('/dashboard'));
+
+// ──────────────────────────────────────────────────────────────
+// HEALTH CHECK — For monitoring/load balancers
+// ──────────────────────────────────────────────────────────────
+app.get('/health', (req, res) => {
+  const redis = redisClient.getStatus();
+  const status = {
+    status: 'healthy',
+    uptime: process.uptime(),
+    postgres: db.isReady() ? 'connected' : 'disconnected',
+    redis: redis.connected ? 'connected' : 'disconnected',
+    activeSessions: sessionStore.getActiveSessions(),
+    version: require('../package.json').version,
+    timestamp: new Date().toISOString()
+  };
+  const httpCode = (db.isReady()) ? 200 : 503;
+  res.status(httpCode).json(status);
+});
 
 // Error handler
 app.use((err, req, res, next) => {

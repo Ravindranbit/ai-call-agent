@@ -19,7 +19,10 @@ async function makeOutboundCall(toNumber) {
     throw new Error('PUBLIC_URL is not set – cannot create outbound call without a reachable webhook URL');
   }
 
-  const to = toNumber || '+917845310959';
+  if (!toNumber) {
+    throw new Error('No phone number specified for outbound call');
+  }
+  const to = toNumber;
   const client = createClient();
 
   return client.calls.create({

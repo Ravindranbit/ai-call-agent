@@ -95,6 +95,19 @@ async function initialize() {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS call_transcripts (
+        id SERIAL PRIMARY KEY,
+        call_sid VARCHAR(64) NOT NULL,
+        turn_number INTEGER DEFAULT 0,
+        speaker VARCHAR(10) NOT NULL,
+        text TEXT,
+        language_code VARCHAR(10),
+        confidence DECIMAL(5,4),
+        intent VARCHAR(100),
+        emotion VARCHAR(30),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
       CREATE INDEX IF NOT EXISTS idx_events_call_sid ON call_events(call_sid);
       CREATE INDEX IF NOT EXISTS idx_events_type ON call_events(event_type);
       CREATE INDEX IF NOT EXISTS idx_events_created ON call_events(created_at);
@@ -102,6 +115,8 @@ async function initialize() {
       CREATE INDEX IF NOT EXISTS idx_feedback_call_sid ON feedback_logs(call_sid);
       CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback_logs(confirmation_status);
       CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback_logs(created_at);
+      CREATE INDEX IF NOT EXISTS idx_transcripts_call_sid ON call_transcripts(call_sid);
+      CREATE INDEX IF NOT EXISTS idx_transcripts_created ON call_transcripts(created_at);
     `);
 
     // Add new columns to existing tables (safe with IF NOT EXISTS via DO blocks)
@@ -415,6 +430,49 @@ async function getActiveCalls() {
   }
 }
 
+// ──────────────────────────────────────────────────────────────
+// CALL TRANSCRIPTS (for Quality Assurance)
+// ──────────────────────────────────────────────────────────────
+
+async function insertTranscript(data) {
+  if (!isReady) return null;
+  try {
+    const { rows } = await getPool().query(
+      `INSERT INTO call_transcripts (call_sid, turn_number, speaker, text, language_code, confidence, intent, emotion)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id`,
+      [
+        data.callSid || null,
+        data.turnNumber || 0,
+        data.speaker || 'user',
+        data.text || null,
+        data.languageCode || null,
+        data.confidence || null,
+        data.intent || null,
+        data.emotion || null
+      ]
+    );
+    return rows[0];
+  } catch (err) {
+    logger.error('Failed to insert transcript', { error: err.message });
+    return null;
+  }
+}
+
+async function getCallTranscript(callSid) {
+  if (!isReady) return [];
+  try {
+    const { rows } = await getPool().query(
+      `SELECT * FROM call_transcripts WHERE call_sid = $1 ORDER BY turn_number ASC, created_at ASC`,
+      [callSid]
+    );
+    return rows;
+  } catch (err) {
+    logger.error('Failed to get call transcript', { error: err.message });
+    return [];
+  }
+}
+
 module.exports = {
   initialize,
   insertEvent,
@@ -426,5 +484,7 @@ module.exports = {
   getDashboardStats,
   getEventStats,
   getActiveCalls,
+  insertTranscript,
+  getCallTranscript,
   isReady: () => isReady
 };

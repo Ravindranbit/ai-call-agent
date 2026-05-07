@@ -1,4 +1,21 @@
+// src/utils/sessionStore.js
+// Hybrid session store: in-memory (fast reads) + Redis (persistence).
+// Sessions auto-expire after 30 minutes via Redis TTL + in-memory cleanup.
+
+const redisClient = require('./redisClient');
+const logger = require('./logger');
+
 const sessions = {};
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+let cleanupTimer = null;
+
+// Database service reference (set lazily to avoid circular deps)
+let _db = null;
+function getDb() {
+  if (!_db) _db = require('../services/databaseService');
+  return _db;
+}
 
 function createDefaultSession() {
   return {
@@ -28,6 +45,8 @@ function createDefaultSession() {
     confusionCount: 0,
     clarificationTurns: 0,
     turnCount: 0,         // total turns in this call
+    silenceCount: 0,
+    consecutiveNeutral: 0,
     emotion: null,
     // Dialect detection
     dialect: 'standard',
@@ -36,6 +55,8 @@ function createDefaultSession() {
     isUrgent: false,
     // Restatement from AI (for verification step)
     lastRestatement: '',
+    // Last AI response (for anti-repetition)
+    lastAiResponse: '',
     // Feedback tracking
     feedbackHistory: [],
     // Timestamps
@@ -57,18 +78,23 @@ function updateSessionState(callSid, updates) {
     sessions[callSid] = createDefaultSession();
   }
   Object.assign(sessions[callSid], updates);
+
+  // Persist to Redis asynchronously (non-blocking)
+  redisClient.setSession(callSid, sessions[callSid]).catch(() => {});
 }
 
 function incrementConfusion(callSid) {
   if (!callSid) return;
   const session = getSessionState(callSid);
   session.confusionCount += 1;
+  redisClient.setSession(callSid, session).catch(() => {});
 }
 
 function resetConfusion(callSid) {
   if (!callSid) return;
   const session = getSessionState(callSid);
   session.confusionCount = 0;
+  redisClient.setSession(callSid, session).catch(() => {});
 }
 
 function appendToSession(callSid, message) {
@@ -82,6 +108,9 @@ function appendToSession(callSid, message) {
   if (session.messages.length > 6) {
     session.messages = session.messages.slice(-6);
   }
+
+  // Persist to Redis asynchronously
+  redisClient.setSession(callSid, session).catch(() => {});
 }
 
 /**
@@ -112,7 +141,6 @@ function getSummaryContext(callSid) {
 
 /**
  * Checks if summarization should be triggered.
- * Returns the messages that need to be summarized (before truncation).
  */
 function shouldSummarize(callSid) {
   const session = getSessionState(callSid);
@@ -140,6 +168,7 @@ function updateSummary(callSid, newSummary, newFacts) {
   if (newFacts) {
     session.facts = { ...session.facts, ...newFacts };
   }
+  redisClient.setSession(callSid, session).catch(() => {});
 }
 
 // Ensure compatibility for existing code calls
@@ -151,11 +180,13 @@ function getSession(callSid) {
 function clearSession(callSid) {
   if (callSid && sessions[callSid]) {
     delete sessions[callSid];
+    // Remove from Redis too
+    redisClient.deleteSession(callSid).catch(() => {});
   }
 }
 
 /**
- * Returns a snapshot of all active sessions (for analytics).
+ * Returns a snapshot of all active sessions count.
  */
 function getActiveSessions() {
   return Object.keys(sessions).length;
@@ -208,6 +239,80 @@ function getCallSummary(callSid) {
   };
 }
 
+// ──────────────────────────────────────────────────────────────
+// SESSION TTL CLEANUP — Prevents memory leaks from orphaned sessions
+// ──────────────────────────────────────────────────────────────
+
+function cleanupExpiredSessions() {
+  const now = Date.now();
+  let cleaned = 0;
+  const db = getDb();
+
+  for (const [callSid, session] of Object.entries(sessions)) {
+    const age = now - (session.callStartedAt || now);
+    if (age > SESSION_TTL_MS) {
+      // Persist final summary to DB before cleanup
+      db.upsertCallSummary(callSid, {
+        primaryIntent: session.intent || session.pendingIntent || null,
+        primaryEmotion: session.emotion || null,
+        dialect: session.dialect || null,
+        isUrgent: session.isUrgent || false,
+        turns: session.turnCount || 0,
+        durationMs: age,
+        conversationSummary: session.summary || null,
+        facts: session.facts || null,
+        endedAt: new Date()
+      }).catch(() => {});
+
+      delete sessions[callSid];
+      redisClient.deleteSession(callSid).catch(() => {});
+      cleaned++;
+    }
+  }
+
+  if (cleaned > 0) {
+    logger.info('Session TTL cleanup', { cleaned, remaining: Object.keys(sessions).length });
+  }
+}
+
+function startCleanupTimer() {
+  if (cleanupTimer) return;
+  cleanupTimer = setInterval(cleanupExpiredSessions, CLEANUP_INTERVAL_MS);
+  // Don't prevent process from exiting
+  if (cleanupTimer.unref) cleanupTimer.unref();
+  logger.info('Session cleanup timer started', { intervalMs: CLEANUP_INTERVAL_MS, ttlMs: SESSION_TTL_MS });
+}
+
+// ──────────────────────────────────────────────────────────────
+// REDIS RESTORE — Load active sessions from Redis on startup
+// ──────────────────────────────────────────────────────────────
+
+async function restoreFromRedis() {
+  try {
+    const stored = await redisClient.getAllSessions();
+    if (stored.length === 0) {
+      logger.info('Redis restore: no sessions to restore');
+      return 0;
+    }
+
+    let restored = 0;
+    for (const { callSid, session } of stored) {
+      // Only restore sessions that aren't too old
+      const age = Date.now() - (session.callStartedAt || Date.now());
+      if (age < SESSION_TTL_MS) {
+        sessions[callSid] = session;
+        restored++;
+      }
+    }
+
+    logger.info('Redis restore complete', { restored, skipped: stored.length - restored });
+    return restored;
+  } catch (err) {
+    logger.error('Redis restore failed', { error: err.message });
+    return 0;
+  }
+}
+
 module.exports = {
   getSessionState,
   updateSessionState,
@@ -223,5 +328,8 @@ module.exports = {
   updateSummary,
   getActiveSessions,
   getAllActiveSessions,
-  getCallSummary
+  getCallSummary,
+  startCleanupTimer,
+  restoreFromRedis,
+  cleanupExpiredSessions
 };

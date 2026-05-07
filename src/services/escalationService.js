@@ -119,7 +119,7 @@ function buildEscalationSummary(callSid, languageCode, reason) {
     emotion: callData.emotion,
     dialect: callData.dialect || 'standard',
     isUrgent: callData.isUrgent || false,
-    conversationSummary: callData.summary,
+    conversationSummary: (callData.summary || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/<think>[\s\S]*/g, '').trim() || 'No summary available',
     facts: callData.facts,
     turnCount: callData.turnCount,
     confusionCount: callData.confusionCount,

@@ -204,7 +204,103 @@ exports.converse = async (req, res) => {
       return res.type('text/xml').send(xml);
     }
 
-    // ── STEP 2.5: Check for immediate escalation (user asks for human) ──
+    // ── STEP 2.5: Detect GOODBYE / END CALL ──
+    const goodbyePatterns = [
+      // English
+      /\b(bye|goodbye|thank you|thanks|nothing else|that's all|that is all|no more|done|hang up|cut the call)\b/i,
+      // Hindi
+      /(धन्यवाद|शुक्रिया|बस|कुछ नहीं|और कुछ नहीं|अलविदा|bye|थैंक यू|बस इतना ही|काट दो|रख दो)/,
+      // Tamil
+      /(நன்றி|போதும்|வேண்டாம்|பை|சரி போதும்|இனி வேண்டாம்|கால் கட்|கால கட்|தாங்க்ஸ்|தாங்க் யூ|தேங்க்யூ|தேங்க்ஸ்)/,
+      // Kannada
+      /(ಧನ್ಯವಾದ|ಸಾಕು|ಬೈ|ಬೇಡ|ಇನ್ನೇನೂ ಬೇಡ|ಥ್ಯಾಂಕ್ಸ್)/
+    ];
+
+    const isGoodbye = goodbyePatterns.some(p => p.test(speechText));
+    // Also detect if user just said a short thank-you type message (under 20 chars)
+    const isShortGoodbye = isGoodbye && speechText.length < 40;
+    // Check if conversation has had at least 2 meaningful turns (don't end prematurely)
+    const turnCount = session?.turnCount || 0;
+
+    if (isShortGoodbye && turnCount >= 2) {
+      // Graceful end
+      const goodbyeMessages = {
+        'kn-IN': 'ನಿಮ್ಮ ಕರೆಗೆ ಧನ್ಯವಾದಗಳು. ಶುಭ ದಿನ!',
+        'en-IN': 'Thank you for calling. Have a great day!',
+        'hi-IN': 'आपकी कॉल के लिए धन्यवाद। शुभ दिन!',
+        'ta-IN': 'உங்கள் அழைப்புக்கு நன்றி. நல்ல நாள் வாழ்த்துக்கள்!'
+      };
+      const goodbyeMsg = goodbyeMessages[languageCode] || goodbyeMessages['en-IN'];
+      const voiceAttr = conversationCopy.voice ? ` voice="${conversationCopy.voice}"` : '';
+
+      // 📊 Analytics: call completed naturally
+      analyticsService.trackEvent('call_completed_naturally', { callSid, turnCount, languageCode });
+
+      // Persist call to DB
+      db.upsertCallSummary(callSid, {
+        from, languageCode, turns: turnCount,
+        primaryEmotion: session?.emotion || 'neutral',
+        primaryIntent: session?.intent || 'general',
+        escalated: false, isUrgent: false,
+        dialect: session?.dialect || 'standard',
+        conversationSummary: session?.summary || '',
+        endedAt: new Date()
+      }).catch(() => { });
+
+      console.log(`👋 GOODBYE DETECTED: Ending call gracefully (turns=${turnCount})`);
+
+      const twiml = buildTwiml(
+        `<Response>\n  <Say language="${conversationCopy.ttsLang}"${voiceAttr}>${goodbyeMsg}</Say>\n</Response>`
+      );
+      return res.type('text/xml').send(twiml);
+    }
+
+    // ── STEP 2.6: Handle EMPTY SPEECH (silence) ──
+    if (!speechText || speechText.length === 0) {
+      const silenceCount = (session?.silenceCount || 0) + 1;
+      sessionStore.updateSessionState(callSid, { silenceCount });
+
+      if (silenceCount >= 3) {
+        // Too many silences — end the call
+        const timeoutMessages = {
+          'kn-IN': 'ನಿಮ್ಮ ಧ್ವನಿ ಕೇಳಲಿಲ್ಲ. ಕರೆ ಮುಗಿಸುತ್ತಿದ್ದೇನೆ. ಧನ್ಯವಾದ.',
+          'en-IN': 'I could not hear you. Thank you for calling. Goodbye.',
+          'hi-IN': 'मैं आपकी आवाज़ नहीं सुन पा रहा हूँ। कॉल समाप्त कर रहा हूँ। धन्यवाद।',
+          'ta-IN': 'உங்கள் குரலை கேட்க முடியவில்லை. அழைப்பை முடிக்கிறேன். நன்றி.'
+        };
+        const timeoutMsg = timeoutMessages[languageCode] || timeoutMessages['en-IN'];
+        const voiceAttr = conversationCopy.voice ? ` voice="${conversationCopy.voice}"` : '';
+
+        console.log(`📞 SILENCE TIMEOUT: Ending call after ${silenceCount} empty inputs`);
+        analyticsService.trackEvent('call_timeout_silence', { callSid, silenceCount });
+
+        const twiml = buildTwiml(
+          `<Response>\n  <Say language="${conversationCopy.ttsLang}"${voiceAttr}>${timeoutMsg}</Say>\n</Response>`
+        );
+        return res.type('text/xml').send(twiml);
+      }
+
+      // Gentle prompt — not "I'm having issues"
+      const silencePrompts = {
+        'kn-IN': 'ನೀವು ಇನ್ನೂ ಇದ್ದೀರಾ? ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?',
+        'en-IN': 'Are you still there? How can I help you?',
+        'hi-IN': 'क्या आप अभी भी हैं? मैं आपकी कैसे मदद कर सकता हूँ?',
+        'ta-IN': 'நீங்கள் இன்னும் இருக்கிறீர்களா? நான் உங்களுக்கு எப்படி உதவ முடியும்?'
+      };
+      const silenceMsg = silencePrompts[languageCode] || silencePrompts['en-IN'];
+
+      const xml = conversationService.buildFallbackResponse({
+        ttsLang: conversationCopy.ttsLang, speechLang: conversationCopy.speechLang,
+        voice: conversationCopy.voice, fallbackText: silenceMsg,
+        actionPath: nextActionPath, speechHints: conversationCopy.speechHints
+      });
+      return res.type('text/xml').send(xml);
+    }
+
+    // Reset silence counter when we get actual speech
+    sessionStore.updateSessionState(callSid, { silenceCount: 0 });
+
+    // ── STEP 2.7: Check for immediate escalation (user asks for human) ──
     const preEscalation = escalationService.shouldEscalate(session, null, speechText);
     if (preEscalation.escalate) {
       return handleEscalation(res, conversationCopy, callSid, languageCode, preEscalation.reason);
@@ -229,14 +325,20 @@ exports.converse = async (req, res) => {
       analyticsService.trackEvent('urgency_detected', { callSid, isUrgent });
     }
 
-    // Store emotion in session (with persistence smoothing)
+    // Store emotion in session (with counter-based recovery)
     let smoothedEmotion = emotion;
     const prevEmotion = session?.emotion;
-    if (prevEmotion === 'distress' && smoothedEmotion === 'neutral') {
-      smoothedEmotion = 'distress';
-    }
-    if (prevEmotion === 'fear' && smoothedEmotion === 'neutral') {
-      smoothedEmotion = 'fear';
+    if (emotion === 'neutral') {
+      const neutralCount = (session?.consecutiveNeutral || 0) + 1;
+      sessionStore.updateSessionState(callSid, { consecutiveNeutral: neutralCount });
+      // Allow recovery after 2 consecutive neutral readings
+      if (neutralCount >= 2) {
+        smoothedEmotion = 'neutral'; // recovered
+      } else if (['distress', 'fear', 'high_distress'].includes(prevEmotion)) {
+        smoothedEmotion = prevEmotion; // sticky for 1 more turn only
+      }
+    } else {
+      sessionStore.updateSessionState(callSid, { consecutiveNeutral: 0 });
     }
     sessionStore.updateSessionState(callSid, {
       emotion: smoothedEmotion,
@@ -273,7 +375,7 @@ exports.converse = async (req, res) => {
         originalText: speechText, aiInterpretation: aiResponse,
         confirmationStatus: 'incorrect', correctedBy: 'system',
         originalIntent: intentName, originalEmotion: emotion, dialect
-      }).catch(() => {});
+      }).catch(() => { });
 
       if (sessionStore.getSessionState(callSid).confusionCount >= 3) {
         const xml = conversationService.buildFallbackResponse({
@@ -294,11 +396,10 @@ exports.converse = async (req, res) => {
 
     // 🟡 MEDIUM CONFIDENCE → CONFIRM (with restatement)
     if (combinedConfidence < 0.7 && session.stage !== 'confirmation') {
-      analyticsService.trackEvent('confidence_medium', { callSid, combinedConfidence });
-
       if (intentName === 'general' && asrConfidence > 0.8) {
-        // Fall through to use AI response directly
+        // Skip medium event — falls through to high confidence path below
       } else {
+        analyticsService.trackEvent('confidence_medium', { callSid, combinedConfidence });
         sessionStore.updateSessionState(callSid, { stage: 'confirmation', pendingIntent: intentName });
 
         // Use RESTATEMENT if available, otherwise use intent prompt
@@ -323,11 +424,24 @@ exports.converse = async (req, res) => {
     analyticsService.trackEvent('confidence_high', { callSid, combinedConfidence });
     sessionStore.resetConfusion(callSid);
 
-    // Topic Drift Guard
-    if (session.intent === 'legal_divorce' && intentName === 'entertainment') {
+    // Topic Drift Guard — Generic: any serious intent → off-topic/entertainment
+    const SERIOUS_INTENTS = [
+      'legal_divorce', 'police_complaint', 'health_emergency', 'corruption_report',
+      'water_supply', 'electricity_issue', 'road_complaint', 'pension_query',
+      'education_query', 'civic_inspection', 'women_safety', 'child_safety', 'fire_emergency'
+    ];
+    const OFF_TOPIC_INTENTS = ['entertainment', 'off_topic'];
+    if (SERIOUS_INTENTS.includes(session.intent) && OFF_TOPIC_INTENTS.includes(intentName)) {
+      const driftMessages = {
+        'kn-IN': `ನಾವು ಈಗ ${session.intent} ಬಗ್ಗೆ ಮಾತನಾಡುತ್ತಿದ್ದೇವೆ. ನಾವು ಅದನ್ನು ಮುಂದುವರಿಸೋಣವೇ?`,
+        'en-IN': `We are currently discussing ${session.intent.replace(/_/g, ' ')}. Shall we continue with that?`,
+        'hi-IN': `हम अभी ${session.intent.replace(/_/g, ' ')} के बारे में बात कर रहे हैं। क्या हम इसे जारी रखें?`,
+        'ta-IN': `நாம் இப்போது ${session.intent.replace(/_/g, ' ')} பற்றி பேசிக்கொண்டிருக்கிறோம். அதைத் தொடரலாமா?`
+      };
+      const driftMsg = driftMessages[languageCode] || conversationCopy.topicDriftMessage || conversationCopy.fallback;
       const xml = conversationService.buildFallbackResponse({
         ttsLang: conversationCopy.ttsLang, speechLang: conversationCopy.speechLang,
-        voice: conversationCopy.voice, fallbackText: conversationCopy.topicDriftMessage || conversationCopy.fallback,
+        voice: conversationCopy.voice, fallbackText: driftMsg,
         actionPath: nextActionPath, speechHints: conversationCopy.speechHints
       });
       return res.type('text/xml').send(xml);
@@ -345,7 +459,7 @@ exports.converse = async (req, res) => {
           originalText: speechText, aiInterpretation: session.lastRestatement || aiResponse,
           confirmationStatus: 'correct', correctedBy: 'citizen',
           originalIntent: session.pendingIntent, originalEmotion: emotion, dialect
-        }).catch(() => {});
+        }).catch(() => { });
 
         if (session.pendingIntent === 'escalation') {
           return handleEscalation(res, conversationCopy, callSid, languageCode, 'User confirmed escalation');
@@ -366,7 +480,7 @@ exports.converse = async (req, res) => {
           originalText: speechText, aiInterpretation: session.lastRestatement || aiResponse,
           confirmationStatus: 'partially_correct', correctedBy: 'citizen',
           originalIntent: session.pendingIntent, originalEmotion: emotion, dialect
-        }).catch(() => {});
+        }).catch(() => { });
 
         sessionStore.updateSessionState(callSid, { stage: 'clarification', clarificationTurns: 0 });
         const partialPrompt = getPartialConfirmationPrompt(languageCode);
@@ -384,7 +498,7 @@ exports.converse = async (req, res) => {
           originalText: speechText, aiInterpretation: session.lastRestatement || aiResponse,
           confirmationStatus: 'incorrect', correctedBy: 'citizen',
           originalIntent: session.pendingIntent, originalEmotion: emotion, dialect
-        }).catch(() => {});
+        }).catch(() => { });
 
         sessionStore.updateSessionState(callSid, { stage: 'intent_detection', pendingIntent: null });
         const xml = conversationService.buildFallbackResponse({
@@ -404,20 +518,20 @@ exports.converse = async (req, res) => {
         } else {
           sessionStore.incrementConfusion(callSid);
           const s = sessionStore.getSessionState(callSid);
-          
+
           // After 3 unclear attempts, escape the loop — go back to intent detection
           if (s.confusionCount >= 3) {
             sessionStore.updateSessionState(callSid, { stage: 'intent_detection', pendingIntent: null });
             sessionStore.resetConfusion(callSid);
             const xml = conversationService.buildFallbackResponse({
               ttsLang: conversationCopy.ttsLang, speechLang: conversationCopy.speechLang,
-              voice: conversationCopy.voice, 
+              voice: conversationCopy.voice,
               fallbackText: conversationCopy.clarificationPrompt || conversationCopy.prompt,
               actionPath: nextActionPath, speechHints: conversationCopy.speechHints
             });
             return res.type('text/xml').send(xml);
           }
-          
+
           const fallbackText = s.confusionCount >= 2
             ? (conversationCopy.yesNoPrompt || conversationCopy.fallback)
             : (conversationCopy.unclearYesNoPrompt || conversationCopy.fallback);
@@ -514,6 +628,20 @@ exports.converse = async (req, res) => {
     sessionStore.updateSessionState(callSid, { facts: updatedFacts });
 
     console.log(`🤖 AI RESPONSE: "${reply}" (lang=${languageCode}, emotion=${smoothedEmotion}, intent=${intentName}, dialect=${dialect})`);
+
+    // 📝 Store transcript for Quality Assurance (non-blocking)
+    const turnNum = session.turnCount || 0;
+    db.insertTranscript({
+      callSid, turnNumber: turnNum, speaker: 'user',
+      text: speechText, languageCode, confidence: asrConfidence,
+      intent: intentName, emotion: smoothedEmotion
+    }).catch(() => {});
+    db.insertTranscript({
+      callSid, turnNumber: turnNum, speaker: 'ai',
+      text: reply, languageCode, confidence: null,
+      intent: intentName, emotion: null
+    }).catch(() => {});
+
     const xml = conversationService.buildConversationLoopResponse({
       ttsLang: conversationCopy.ttsLang, speechLang: conversationCopy.speechLang,
       voice: conversationCopy.voice, messageText: reply,
@@ -563,7 +691,10 @@ exports.makeCall = handleMakeCall;
 // Call ALL verified numbers at once
 async function handleMakeCallAll(req, res) {
   try {
-    const numbers = ['+917845310959', '+918940388777', '+916379873249'];
+    const numbers = config.outboundNumbers;
+    if (!numbers || numbers.length === 0) {
+      return res.status(400).json({ success: false, message: 'No OUTBOUND_NUMBERS configured in .env' });
+    }
     const results = await twilioService.makeMultipleCalls(numbers);
     return res.status(200).json({ success: true, message: `Called ${numbers.length} numbers`, results });
   } catch (error) {

@@ -3,8 +3,23 @@ const logger = require('../utils/logger');
 const sessionStore = require('../utils/sessionStore');
 const intentService = require('./intentService');
 const { detectEmotion } = require('./emotionService');
+const knowledgeBase = require('./knowledgeBase');
 
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+// ──────────────────────────────────────────────────────────────
+// PROVIDER ENDPOINTS
+// ──────────────────────────────────────────────────────────────
+const PROVIDERS = {
+  nvidia: {
+    url: 'https://integrate.api.nvidia.com/v1/chat/completions',
+    keyEnv: 'nvidiaApiKey',
+    defaultModel: 'sarvamai/sarvam-m'
+  },
+  groq: {
+    url: 'https://api.groq.com/openai/v1/chat/completions',
+    keyEnv: 'groqApiKey',
+    defaultModel: 'meta-llama/llama-4-scout-17b-16e-instruct'
+  }
+};
 
 // Mapping languageCode to specific language names as required
 const languageNames = {
@@ -23,33 +38,232 @@ const fallbacks = {
 
 function hasExpectedScript(text, languageCode) {
   if (!text) return false;
-  if (languageCode === 'en-IN') {
-    // Just make sure it contains some text
-    return true;
-  }
-  if (languageCode === 'ta-IN') {
-    // Check for Tamil Unicode range
-    return /[\u0B80-\u0BFF]/.test(text);
-  }
-  if (languageCode === 'hi-IN') {
-    // Check for Devanagari (Hindi) Unicode range
-    return /[\u0900-\u097F]/.test(text);
-  }
-  if (languageCode === 'kn-IN') {
-    // Check for Kannada Unicode range
-    return /[\u0C80-\u0CFF]/.test(text);
-  }
+  if (languageCode === 'en-IN') return true;
+  if (languageCode === 'ta-IN') return /[\u0B80-\u0BFF]/.test(text);
+  if (languageCode === 'hi-IN') return /[\u0900-\u097F]/.test(text);
+  if (languageCode === 'kn-IN') return /[\u0C80-\u0CFF]/.test(text);
   return true;
 }
 
+// Simple word-overlap similarity (0.0 = totally different, 1.0 = identical)
+function getTextSimilarity(a, b) {
+  if (!a || !b) return 0;
+  const wordsA = new Set(a.toLowerCase().split(/\s+/));
+  const wordsB = new Set(b.toLowerCase().split(/\s+/));
+  const intersection = [...wordsA].filter(w => wordsB.has(w));
+  const union = new Set([...wordsA, ...wordsB]);
+  return union.size > 0 ? intersection.length / union.size : 0;
+}
+
+// Strip hallucinated phone numbers from AI responses.
+// Keeps ONLY numbers that exist in the knowledge base.
+function stripHallucinatedPhoneNumbers(text) {
+  if (!text) return text;
+  // Match common Indian phone patterns: 080-XXXX-XXXX, +91XXXXXXXXXX, 1800-XXX-XXXX, 3-4 digit helplines
+  const phoneRegex = /(\+91[\s-]?\d{5}[\s-]?\d{5}|0\d{2,4}[\s-]?\d{4,8}|1800[\s-]?\d{3}[\s-]?\d{3,4})/g;
+  const knownNumbers = new Set();
+  // Build set of all known numbers from knowledge base
+  for (const dept of knowledgeBase.getAllDepartments()) {
+    for (const phone of dept.phones) {
+      knownNumbers.add(phone.replace(/[\s-]/g, ''));
+    }
+  }
+
+  return text.replace(phoneRegex, (match) => {
+    const normalized = match.replace(/[\s-]/g, '');
+    if (knownNumbers.has(normalized)) return match; // keep known numbers
+    return ''; // strip unknown/hallucinated numbers
+  }).replace(/\s{2,}/g, ' ').trim();
+}
+
+// Robust JSON extraction using bracket counting (handles nested {} and trailing text)
+function extractJsonObject(text) {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (ch === '\\' && inString) {
+      escape = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (ch === '{') depth++;
+    if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(text.slice(start, i + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 // ──────────────────────────────────────────────────────────────
-// HYBRID SINGLE-CALL: Emotion + Intent + Dialect + Urgency + Response in ONE GPT call
+// SMART PROVIDER CHAIN — NVIDIA first (if key exists), then Groq fallback
+// ──────────────────────────────────────────────────────────────
+
+function getProviderChain() {
+  const chain = [];
+
+  // Determine primary provider from config
+  const primary = config.aiProvider || 'auto';
+
+  // For 'auto' mode: Groq FIRST (fast ~1.5s) → NVIDIA fallback (slower but better quality)
+  // Voice calls need speed — callers can't wait 16 seconds in silence
+
+  if (primary === 'groq' || primary === 'auto') {
+    if (config.groqApiKey) {
+      // Primary Groq model (fastest)
+      chain.push({
+        name: 'groq',
+        url: PROVIDERS.groq.url,
+        apiKey: config.groqApiKey,
+        model: config.groqModel || PROVIDERS.groq.defaultModel
+      });
+      // Groq fallback models (different rate limit pools)
+      const groqFallbacks = [
+        'meta-llama/llama-4-scout-17b-16e-instruct',
+        'llama-3.3-70b-versatile',
+        'llama-3.1-8b-instant'
+      ];
+      for (const m of groqFallbacks) {
+        if (m !== (config.groqModel || PROVIDERS.groq.defaultModel)) {
+          chain.push({
+            name: 'groq',
+            url: PROVIDERS.groq.url,
+            apiKey: config.groqApiKey,
+            model: m
+          });
+        }
+      }
+    }
+  }
+
+  // NVIDIA Sarvam-M — best quality for Indian languages but slower (~10-16s)
+  // Used as fallback when ALL Groq models are rate-limited
+  if (primary === 'nvidia' || primary === 'auto') {
+    if (config.nvidiaApiKey) {
+      chain.push({
+        name: 'nvidia',
+        url: PROVIDERS.nvidia.url,
+        apiKey: config.nvidiaApiKey,
+        model: config.nvidiaModel || PROVIDERS.nvidia.defaultModel
+      });
+    }
+  }
+
+  if (chain.length === 0) {
+    throw new Error('No AI provider configured. Set NVIDIA_API_KEY or GROQ_API_KEY in .env');
+  }
+
+  return chain;
+}
+
+// ──────────────────────────────────────────────────────────────
+// API CALL WITH RETRY + PROVIDER FALLBACK
+// ──────────────────────────────────────────────────────────────
+
+async function callLLMWithFallback(messages, maxTokens = 512) {
+  const chain = getProviderChain();
+  let lastError = null;
+
+  for (const provider of chain) {
+    try {
+      const result = await callProvider(provider, messages, maxTokens);
+      return result;
+    } catch (err) {
+      lastError = err;
+      const is429 = err.message?.includes('429');
+      const is5xx = err.message?.includes('500') || err.message?.includes('503');
+
+      if (is429 || is5xx) {
+        // Extract retry delay from error if available
+        const delayMatch = err.message.match(/try again in (\d+\.?\d*)s/i);
+        const waitMs = delayMatch ? Math.ceil(parseFloat(delayMatch[1]) * 1000) : 2000;
+
+        logger.warn(`Provider ${provider.name}/${provider.model} rate-limited, trying next`, {
+          provider: provider.name, model: provider.model, waitMs
+        });
+
+        await new Promise(r => setTimeout(r, Math.min(waitMs, 3000)));
+        continue;
+      }
+
+      logger.warn(`Provider ${provider.name}/${provider.model} failed, trying next`, {
+        error: err.message?.slice(0, 150)
+      });
+      continue;
+    }
+  }
+
+  throw lastError || new Error('All AI providers failed');
+}
+
+async function callProvider(provider, messages, maxTokens) {
+  const response = await fetch(provider.url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${provider.apiKey}`
+    },
+    body: JSON.stringify({
+      model: provider.model,
+      temperature: 0.3,
+      max_tokens: maxTokens,
+      messages
+    })
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`${provider.name} API returned ${response.status}: ${errorBody.slice(0, 300)}`);
+  }
+
+  const data = await response.json();
+  let content = data?.choices?.[0]?.message?.content;
+
+  if (!content) {
+    throw new Error(`Empty response from ${provider.name}`);
+  }
+
+  // Strip <think>...</think> tags (complete AND truncated)
+  content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  content = content.replace(/<think>[\s\S]*/g, '').trim();
+
+  return { content, provider: provider.name, model: provider.model };
+}
+
+// ──────────────────────────────────────────────────────────────
+// HYBRID SINGLE-CALL: Emotion + Intent + Dialect + Urgency + Response
 // ──────────────────────────────────────────────────────────────
 
 async function analyzeAndRespond({ userText, languageCode, callSid }) {
   try {
-    if (!config.groqApiKey) {
-      throw new Error('GROQ_API_KEY is missing');
+    if (!config.groqApiKey && !config.nvidiaApiKey) {
+      throw new Error('No AI API key configured (set GROQ_API_KEY or NVIDIA_API_KEY)');
     }
 
     const langName = languageNames[languageCode] || 'English';
@@ -59,7 +273,7 @@ async function analyzeAndRespond({ userText, languageCode, callSid }) {
     const previousIntent = session ? (session.intent || 'none') : 'none';
     const previousEmotion = session?.emotion || 'neutral';
 
-    // Get memory context (summary + facts + recent messages)
+    // Get memory context
     const memory = callSid ? sessionStore.getSummaryContext(callSid) : { summary: '', facts: {}, recentMessages: [], turnCount: 0 };
     const memorySummary = memory.summary || '';
     const memoryFacts = Object.keys(memory.facts).length > 0 ? JSON.stringify(memory.facts) : 'none';
@@ -71,177 +285,82 @@ async function analyzeAndRespond({ userText, languageCode, callSid }) {
       timestamp: new Date().toISOString()
     });
 
-    const systemPrompt = `You are a smart ${langName} voice assistant on a government citizen helpline (1092 Karnataka).
+    // Get last AI response to prevent repetition
+    const lastAiResponse = callSid ? (sessionStore.getSessionState(callSid)?.lastAiResponse || '') : '';
 
-TASK: Analyze the caller's message and respond with a JSON object.
+    // ── COMPACT SYSTEM PROMPT ──
+    const kbContext = knowledgeBase.getKnowledgeBaseForPrompt();
+    const systemPrompt = `You are a ${langName} voice assistant on 1092 Karnataka Government Helpline.
 
-You MUST return ONLY valid JSON in this exact format:
-{
-  "emotion": "neutral",
-  "intent": "general",
-  "intentConfidence": 0.5,
-  "isSensitive": false,
-  "isUrgent": false,
-  "dialect": "standard",
-  "dialectNotes": "",
-  "restatement": "",
-  "response": "Your helpful response here"
-}
+Return ONLY valid JSON (no markdown, no explanation):
+{"emotion":"neutral","intent":"general","intentConfidence":0.5,"isSensitive":false,"isUrgent":false,"dialect":"standard","dialectNotes":"","restatement":"","response":""}
 
-EMOTION — detect the caller's emotional state:
-- "neutral" — normal conversation
-- "happy" — sounds positive, grateful, laughing
-- "distress" — sounds stressed, sad, troubled, mentions problems
-- "high_distress" — extremely upset, mentions severe hardship
-- "angry" — sounds frustrated, irritated, annoyed
-- "confused" — sounds lost, unsure, asking "what?" or "how?"
-- "fear" — sounds scared, worried, threatened, mentions danger or threat
-- "urgency" — time-sensitive situation, emergency, needs immediate help
+FIELDS:
+- emotion: neutral|happy|distress|high_distress|angry|confused|fear|urgency
+- intent: short label like water_supply, road_complaint, electricity_issue, pension_query, police_complaint, health_emergency, corruption_report, legal_divorce, education_query, civic_inspection, general, off_topic
+- intentConfidence: 0.0-1.0 (how clear the intent is)
+- isSensitive: true for divorce/abuse/death/mental health/domestic violence
+- isUrgent: true ONLY for real emergencies (accident, fire, immediate physical danger). NOT for general angry/frustrated callers.
+- dialect: standard, north_karnataka, south_karnataka, coastal_karnataka, bangalore_urban, hyderabad_karnataka (for Kannada). For Tamil: standard, madurai, chennai_colloquial. For Hindi: standard, deccani
+- dialectNotes: brief note on colloquial expressions used (empty if standard)
+- restatement: 1-sentence restatement of caller's issue in ${langName}. Empty if too vague.
+- response: Your helpful reply in ${langName} ONLY. Max 2 sentences.
 
-URGENCY (separate boolean flag — a calm person can have an urgent matter):
-- true: medical emergency, accident, fire, immediate danger, time-critical government deadline, etc.
-- false: general inquiry, non-time-sensitive matter
-
-INTENT — categorize what the caller wants:
-- Use short labels like: "legal_divorce", "road_complaint", "water_supply", "electricity_issue", "police_complaint", "pension_query", "corruption_report", "health_emergency", "education_query", "general_query", etc.
-- Create a relevant label based on the actual topic — do NOT force into predefined categories
-- "general" if you cannot determine a specific intent
-
-INTENT CONFIDENCE:
-- 1.0 = very clear intent, exact keywords used
-- 0.7-0.9 = clear intent with some context
-- 0.4-0.6 = somewhat clear, could be interpreted differently
-- 0.1-0.3 = vague, unclear intent
-- 0.0 = cannot determine intent at all
-
-IS SENSITIVE:
-- true for topics like: divorce, death, abuse, legal issues, medical emergencies, mental health, domestic violence, child abuse, sexual harassment
-- false for normal queries
-
-DIALECT DETECTION (especially for Kannada):
-- "standard" — standard/formal language
-- "north_karnataka" — Dharwad, Belgaum, Hubli region dialect (e.g., "ಏನ್ ಮಾಡ್ತೀರಿ", "ಬರ್ರಿ", "ಹೋಗ್ರಿ", "ಅಲ್ರಿ", use of "ರಿ" suffix)
-- "south_karnataka" — Mysore, Mandya, Hassan region dialect (e.g., "ಏನ್ ಮಾಡ್ತೀಯ", "ಬಾರಯ್ಯ", "ಹೋಗಪ್ಪ")
-- "coastal_karnataka" — Mangalore, Udupi region dialect (e.g., Tulu-influenced Kannada, "ಎಂಚ", "ಯಾನ್")
-- "bangalore_urban" — Bangalore colloquial (code-mixed English-Kannada, "ಮಚ್ಚಿ", "ಏನ್ ಗುರು")
-- "hyderabad_karnataka" — Gulbarga, Raichur region (Urdu-influenced, "ಏನ್ ಮಾಡ್ತಾರ")
-- For Hindi: "standard", "bihari", "bhojpuri", "rajasthani", "deccani" (Hyderabad Hindi)
-- For English: "standard", "regional_english" (heavy mother-tongue influence)
-- For Tamil: "standard", "madurai", "chennai_colloquial", "sri_lankan"
-
-DIALECT NOTES: Brief description of any colloquial expressions, local idioms, or regional phrases used by the caller. Leave empty if standard language.
-
-RESTATEMENT: A concise 1-sentence restatement of the citizen's issue in the SAME language they spoke. This will be read back to verify understanding. Example: "You are facing a water supply problem in your area for the last 3 days." Leave empty if the input is too vague to restate.
+VERIFIED DEPARTMENT DIRECTORY (USE ONLY THESE NUMBERS):
+${kbContext}
 
 RESPONSE RULES:
-- Respond ONLY in ${langName}. Do NOT mix languages.
-- Maximum 2 sentences.
-- This is a GOVERNMENT HELPLINE — be professional, empathetic, and helpful.
-- Adjust tone based on the detected emotion:
-  → neutral: normal helpful tone
-  → happy: friendly and appreciative
-  → distress: calm, supportive, empathetic
-  → high_distress: extra empathy, very calm
-  → angry: calm, respectful, de-escalating
-  → confused: explain clearly, guide step-by-step
-  → fear: reassuring, protective, calming
-  → urgency: immediate, action-oriented, prioritize help
+- Respond ONLY in ${langName}. Never mix languages.
+- Be professional, empathetic. Adjust tone to emotion.
+- Understand colloquial/informal speech (Tamil: ஏதாச்சு=ஏதாவது, பத்தி=பற்றி, சொல்லுங்க=சொல்லுங்கள்).
+- OFF-TOPIC: If caller asks about movies/entertainment/gossip, set intent="off_topic", redirect politely.
+- GIVE REAL INFORMATION. Use ONLY the verified department numbers listed above.
+- NEVER invent, fabricate, or guess phone numbers, addresses, or URLs. If you don't have a number, say "please call 1092 again during working hours".
+- Each response MUST be DIFFERENT from the previous one. Do NOT repeat the same information.
+${lastAiResponse ? `- YOUR LAST RESPONSE WAS: "${lastAiResponse.slice(0, 100)}". DO NOT repeat this. Say something NEW and DIFFERENT.` : ''}
 
-OFF-TOPIC GUARDRAIL (VERY IMPORTANT):
-- This is a GOVERNMENT HELPLINE for civic issues, complaints, and public services ONLY.
-- If the caller asks about movies, entertainment, gossip, personal chat, jokes, fun facts, or anything NOT related to government services:
-  → Set intent to "off_topic" with intentConfidence 0.9
-  → Respond POLITELY redirecting them: "This is a government helpline for civic issues. I can help with complaints about roads, water, electricity, government services, etc. How can I help you with a civic matter?"
-  → Do NOT engage with off-topic requests. Do NOT discuss movies, entertainment, etc.
-- If the caller seems lonely and just wants to talk, be empathetic but redirect: "I understand. If you have any government-related issue or need help with a public service, I'm here to assist."
+MISUNDERSTANDING DETECTION (CRITICAL):
+- If the caller says anything like "that's not what I asked", "you're not understanding", "wrong", "I didn't say that", "no no", "வேற சொல்றேன்", "நான் கேட்டது ஒன்னு", "அது இல்ல", "ಅದಲ್ಲ", "ये नहीं":
+  → You MISUNDERSTOOD them. DO NOT continue with your previous assumption.
+  → Set intent to "general" with low intentConfidence (0.2).
+  → APOLOGIZE and ask them to clearly repeat what they need.
+  → Example response: "மன்னிக்கவும், நான் தவறாக புரிந்துகொண்டேன். நீங்கள் என்ன உதவி தேவை என்று மீண்டும் சொல்ல முடியுமா?"
+- If the caller corrects you (e.g., "I said civics, not treatment"), IMMEDIATELY adopt their correction.
 
-ANTI-REPETITION (CRITICAL):
-- NEVER repeat the same response twice in a row.
-- If you already said something similar, rephrase it completely or ask a specific question.
-- Check the conversation history and DO NOT repeat phrases from your previous responses.
-- Vary your language — use different words, different sentence structures.
+ASR WARNING: The text you receive is from speech recognition and may contain errors. Consider alternative interpretations (e.g., "சிகிச்சை" might actually be "சிவிக்ஸ்", similar-sounding words may be transcribed wrong).
 
-COLLOQUIAL LANGUAGE:
-- Callers will use informal, colloquial language — NOT textbook grammar.
-- Tamil: "ஏதாச்சு" = ஏதாவது, "பேசுங்க" = பேசுங்கள், "பத்தி" = பற்றி, "சொல்லுங்க" = சொல்லுங்கள், "வேணாம்" = வேண்டாம், "இல்ல" = இல்லை
-- Kannada: "ಮಾಡ್ತೀನಿ" = ಮಾಡುತ್ತೇನೆ, "ಹೇಳ್ರಿ" = ಹೇಳಿರಿ, "ಬರ್ರಿ" = ಬನ್ನಿ
-- Hindi: "kya hai" = क्या है, "batao" = बताओ, "karo" = करो
-- Understand and respond to colloquial forms just as well as formal ones.
+CONTEXT: stage=${stage}, prevIntent=${previousIntent}, prevEmotion=${previousEmotion}, entities=${entitiesJson}, turn=${memory.turnCount}
+${memorySummary ? `MEMORY: ${memorySummary}` : ''}${memoryFacts !== 'none' ? ` FACTS: ${memoryFacts}` : ''}
 
-CONVERSATION CONTEXT:
-- Stage: ${stage}
-- Previous intent: ${previousIntent}
-- Previous emotion: ${previousEmotion}
-- Entities: ${entitiesJson}
-- Turn count: ${memory.turnCount}
+STAGE: ${stage === 'confirmation' ? 'User was asked to confirm. Detect yes/no.' : stage === 'clarification' ? 'Ask ONE clarifying question.' : stage === 'solution' ? 'Give helpful suggestion + one follow-up.' : 'Understand intent, respond helpfully with REAL information.'}
 
-MEMORY (what happened earlier in this call):
-${memorySummary ? `Summary: ${memorySummary}` : 'No earlier context yet.'}
-Facts: ${memoryFacts}
-
-IMPORTANT MEMORY RULES:
-- Use the summary and facts to stay consistent with the conversation
-- Do NOT repeat questions that were already asked
-- Do NOT forget preferences or decisions the user already shared
-- Build on what was discussed earlier
-
-STAGE BEHAVIOR:
-- intent_detection: Understand what the user wants, respond helpfully
-- confirmation: The user was asked to confirm something. Detect yes/no and respond accordingly.
-- clarification: Ask exactly ONE clarifying question about the topic
-- solution: Give a helpful suggestion + ONE follow-up question
-
-CRITICAL: Return ONLY the JSON object. No markdown, no backticks, no explanation.`;
+Return ONLY the JSON object.`;
 
     // Append current user message to conversation history
     if (callSid) {
       sessionStore.appendToSession(callSid, { role: 'user', content: userText });
     }
 
-    // Get conversation context
+    // Keep last 4 messages (2 turns) to save tokens
     const history = callSid ? sessionStore.getSession(callSid) : [{ role: 'user', content: userText }];
-    const cleanHistory = history.slice(-6); // last 3 turns
+    const cleanHistory = history.slice(-4);
 
-    const response = await fetch(GROQ_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.groqApiKey}`
-      },
-      body: JSON.stringify({
-        model: config.groqModel,
-        temperature: 0.3,
-        max_tokens: 400,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...cleanHistory
-        ]
-      })
-    });
+    // ── CALL LLM WITH AUTOMATIC PROVIDER FALLBACK ──
+    const { content, provider: usedProvider, model: usedModel } = await callLLMWithFallback(
+      [{ role: 'system', content: systemPrompt }, ...cleanHistory],
+      512
+    );
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`Groq API returned ${response.status}: ${errorBody.slice(0, 300)}`);
-    }
-
-    const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content;
-
-    if (!content) {
-      throw new Error('Empty response from Groq');
-    }
+    logger.info('LLM response received', { usedProvider, usedModel, contentLength: content.length });
 
     // Parse the JSON response
     let parsed;
     try {
       parsed = JSON.parse(content);
     } catch (parseErr) {
-      // Try extracting JSON from the response if it has extra text
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsed = JSON.parse(jsonMatch[0]);
-      } else {
+      // Try extracting JSON using bracket-counting (handles nested {} correctly)
+      parsed = extractJsonObject(content);
+      if (!parsed) {
         throw new Error(`Failed to parse JSON: ${content.slice(0, 200)}`);
       }
     }
@@ -271,8 +390,50 @@ CRITICAL: Return ONLY the JSON object. No markdown, no backticks, no explanation
     }
 
     // Voice UX guard: prevent extremely long outputs
-    if (result.response.length > 200) {
-      result.response = result.response.slice(0, 200);
+    if (result.response.length > 250) {
+      result.response = result.response.slice(0, 250);
+    }
+
+    // ── HALLUCINATION GUARD: Strip any fake phone numbers ──
+    result.response = stripHallucinatedPhoneNumbers(result.response);
+
+    // ── Append verified department info if intent maps to a known department ──
+    if (result.intent && result.intent !== 'general' && result.intent !== 'off_topic') {
+      const deptContext = knowledgeBase.getDepartmentContext(result.intent, languageCode);
+      if (deptContext && !result.response.includes(deptContext.split(',')[0]?.trim()?.slice(0, 20))) {
+        // Only append if the response doesn't already contain the dept info
+        const combined = result.response + ' ' + deptContext;
+        result.response = combined.length > 350 ? combined.slice(0, 350) : combined;
+      }
+    }
+
+    // ── ANTI-REPETITION GUARD ──
+    // If the response is too similar to the last one, flag it
+    if (lastAiResponse && result.response) {
+      const similarity = getTextSimilarity(lastAiResponse, result.response);
+      if (similarity > 0.7) {
+        logger.warn('Response too similar to previous, requesting rephrase', { similarity });
+        // Try to get a different response by adding a stronger anti-repeat instruction
+        try {
+          const retryMessages = [
+            { role: 'system', content: systemPrompt + `\n\nCRITICAL: Your previous response was "${lastAiResponse.slice(0, 100)}". You MUST say something COMPLETELY DIFFERENT this time. Give new information, a new angle, or a specific action step.` },
+            ...cleanHistory
+          ];
+          const retry = await callLLMWithFallback(retryMessages, 512);
+          let retryParsed;
+          const retryContent = retry.content;
+          const retryJsonMatch = retryContent.match(/\{[\s\S]*\}/);
+          if (retryJsonMatch) {
+            retryParsed = JSON.parse(retryJsonMatch[0]);
+            if (retryParsed.response && typeof retryParsed.response === 'string') {
+              result.response = retryParsed.response.trim().slice(0, 250);
+            }
+          }
+        } catch (retryErr) {
+          // Keep original response if retry fails
+          logger.warn('Anti-repetition retry failed', { error: retryErr?.message });
+        }
+      }
     }
 
     // Store dialect and urgency in session
@@ -284,13 +445,14 @@ CRITICAL: Return ONLY the JSON object. No markdown, no backticks, no explanation
       });
     }
 
-    // Append AI response to context
+    // Append AI response to context + store for anti-repetition
     if (callSid && result.response) {
       sessionStore.appendToSession(callSid, { role: 'assistant', content: result.response });
+      sessionStore.updateSessionState(callSid, { lastAiResponse: result.response });
     }
 
     logger.info('Hybrid AI analysis complete', {
-      callSid, languageCode,
+      callSid, languageCode, usedProvider, usedModel,
       emotion: result.emotion,
       intent: result.intent,
       intentConfidence: result.intentConfidence,

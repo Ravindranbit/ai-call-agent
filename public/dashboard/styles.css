@@ -899,6 +899,55 @@ body {
 .badge-incorrect { background: var(--red-bg); color: var(--red); }
 .badge-unknown { background: var(--bg-elevated); color: var(--text-muted); }
 
+/* ── TRANSCRIPT BUBBLES ───────────────────────────────────── */
+
+.transcript-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 350px;
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.transcript-bubble {
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  line-height: 1.5;
+  max-width: 85%;
+  animation: fadeIn 0.2s ease;
+}
+
+.transcript-user {
+  background: var(--cyan-bg);
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  align-self: flex-start;
+}
+
+.transcript-ai {
+  background: var(--accent-glow);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  align-self: flex-end;
+}
+
+.transcript-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.transcript-content {
+  color: var(--text-secondary);
+  font-weight: 450;
+  word-break: break-word;
+}
+
 /* ── RESPONSIVE ────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
@@ -911,3 +960,4 @@ body {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .charts-grid { grid-template-columns: 1fr; }
 }
+

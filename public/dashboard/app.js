@@ -137,9 +137,33 @@ async function showCallDetail(callSid) {
   modal.classList.add('open');
   body.innerHTML = '<p style="color:var(--text-muted)">Loading events…</p>';
   try {
-    const [eventsRes, callsRes] = await Promise.all([fetchJSON(`/api/dashboard/calls/${callSid}/events`), fetchJSON(`/api/dashboard/calls?limit=200`)]);
+    const [eventsRes, callsRes, transcriptRes] = await Promise.all([
+      fetchJSON(`/api/dashboard/calls/${callSid}/events`),
+      fetchJSON(`/api/dashboard/calls?limit=200`),
+      fetchJSON(`/api/dashboard/calls/${callSid}/transcript`).catch(() => ({ transcript: [] }))
+    ]);
     const call = (callsRes.calls || []).find(c => c.call_sid === callSid) || {};
     const events = eventsRes.events || [];
+    const transcript = transcriptRes.transcript || [];
+
+    // Build transcript chat bubbles
+    let transcriptHtml = '';
+    if (transcript.length > 0) {
+      const bubbles = transcript.map(t => {
+        const isUser = t.speaker === 'user';
+        const icon = isUser ? '👤' : '🤖';
+        const bgClass = isUser ? 'transcript-user' : 'transcript-ai';
+        const confStr = t.confidence ? ` <span style="opacity:0.5;font-size:11px">(${(t.confidence * 100).toFixed(0)}%)</span>` : '';
+        const metaStr = t.intent && isUser ? ` <span style="opacity:0.5;font-size:11px">[${t.intent}${t.emotion ? ', ' + t.emotion : ''}]</span>` : '';
+        return `<div class="transcript-bubble ${bgClass}">
+          <span class="transcript-icon">${icon}</span>
+          <div class="transcript-content">${t.text || '—'}${confStr}${metaStr}</div>
+        </div>`;
+      }).join('');
+      transcriptHtml = `<div class="detail-label" style="margin:18px 0 10px">Transcript · ${transcript.length} messages</div>
+        <div class="transcript-container">${bubbles}</div>`;
+    }
+
     body.innerHTML = `
       <div class="detail-grid">
         <div class="detail-item"><div class="detail-label">Call SID</div><div class="detail-value"><code style="font-size:12px">${callSid}</code></div></div>
@@ -152,9 +176,67 @@ async function showCallDetail(callSid) {
         <div class="detail-item"><div class="detail-label">Escalated</div><div class="detail-value">${call.escalated ? '<span style="color:var(--red)">Yes</span>' : '<span style="color:var(--green)">No</span>'}</div></div>
       </div>
       ${call.conversation_summary ? `<div style="margin-bottom:18px"><div class="detail-label">Conversation Summary</div><div class="detail-value" style="font-weight:450;font-size:13px;margin-top:4px;color:var(--text-secondary);line-height:1.5">${call.conversation_summary}</div></div>` : ''}
-      <div class="detail-label" style="margin-bottom:10px">Event Timeline · ${events.length} events</div>
-      <div class="events-timeline">${events.map(e => `<div class="timeline-event"><span class="timeline-type">${formatEventName(e.event_type)}</span><span class="timeline-time">${new Date(e.created_at).toLocaleTimeString()}</span></div>`).join('')}${events.length === 0 ? '<div class="empty-state-text">No events recorded</div>' : ''}</div>`;
+      ${transcriptHtml}
+      <div class="detail-label" style="margin-bottom:10px;margin-top:18px">Event Timeline · ${events.length} events</div>
+      <div class="events-timeline">${events.map(e => `<div class="timeline-event"><span class="timeline-type">${formatEventName(e.event_type)}</span><span class="timeline-time">${new Date(e.created_at).toLocaleTimeString()}</span></div>`).join('')}${events.length === 0 ? '<div class="empty-state-text">No events recorded</div>' : ''}</div>
+      
+      <div class="feedback-container" style="margin-top: 24px; padding: 16px; background: rgba(96, 165, 250, 0.05); border: 1px solid rgba(96, 165, 250, 0.2); border-radius: 8px;">
+        <div class="detail-label" style="color: var(--blue); margin-bottom: 8px;">Agent Feedback (Auto-saving)</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+          <div>
+            <label style="font-size:11px; color:var(--text-muted); margin-bottom:4px; display:block;">Accuracy</label>
+            <select id="fbAccuracy_${callSid}" onchange="submitAgentFeedback('${callSid}', '${call.primary_intent || ''}')" style="width: 100%; padding: 8px; border-radius: 4px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text);">
+              <option value="correct">✅ Completely Correct</option>
+              <option value="partially_correct">⚠️ Partially Correct</option>
+              <option value="incorrect">❌ Incorrect</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px; color:var(--text-muted); margin-bottom:4px; display:block;">Correct Intent (if wrong)</label>
+            <input type="text" id="fbIntent_${callSid}" value="${call.primary_intent || ''}" onchange="submitAgentFeedback('${callSid}', '${call.primary_intent || ''}')" style="width: 100%; padding: 8px; border-radius: 4px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text);">
+          </div>
+        </div>
+        <textarea id="fbNotes_${callSid}" placeholder="Agent notes or details on dialect nuances... (saves when you click outside)" onblur="submitAgentFeedback('${callSid}', '${call.primary_intent || ''}')" style="width: 100%; padding: 8px; border-radius: 4px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); min-height: 60px; margin-bottom: 8px; font-family: inherit; font-size: 13px;"></textarea>
+        <div style="text-align: right;">
+          <span id="fbSuccess_${callSid}" style="color: var(--green); font-size: 12px; opacity: 0; transition: opacity 0.3s; font-weight: 500;">✓ Saved automatically!</span>
+        </div>
+      </div>
+      `;
   } catch (err) { body.innerHTML = `<p style="color:var(--red)">Error loading: ${err.message}</p>`; }
+}
+
+async function submitAgentFeedback(callSid, originalIntent) {
+  const accuracy = document.getElementById(`fbAccuracy_${callSid}`).value;
+  const correctedIntent = document.getElementById(`fbIntent_${callSid}`).value;
+  const notes = document.getElementById(`fbNotes_${callSid}`).value;
+  
+  try {
+    const res = await fetch('/api/agent/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callSid,
+        confirmationStatus: accuracy,
+        originalIntent: originalIntent,
+        correctedIntent: correctedIntent,
+        agentNotes: notes,
+        correctedBy: 'human_agent'
+      })
+    });
+    
+    if (res.ok) {
+      const msg = document.getElementById(`fbSuccess_${callSid}`);
+      if (msg) {
+        msg.style.opacity = '1';
+        setTimeout(() => msg.style.opacity = '0', 3000);
+      }
+      // Reload feedback tab data if we are on it
+      if (currentTab === 'feedback') loadFeedback();
+    }
+  } catch (err) {
+    console.error('Failed to submit feedback', err);
+    alert('Failed to submit feedback. Check console.');
+  }
 }
 
 // ── INTENTS ──
