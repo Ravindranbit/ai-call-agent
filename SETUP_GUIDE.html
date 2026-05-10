@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1092 Assist — Project Setup Guide</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --text: #1f2937;
+            --text-muted: #6b7280;
+            --bg: #ffffff;
+            --code-bg: #f3f4f6;
+            --border: #e5e7eb;
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            line-height: 1.6;
+            color: var(--text);
+            background: #f9fafb;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 850px;
+            margin: 0 auto;
+            background: var(--bg);
+            padding: 60px 80px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+            border: 1px solid var(--border);
+        }
+
+        header {
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 20px;
+            margin-bottom: 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        .brand h1 {
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: -1px;
+            color: #111827;
+        }
+
+        .brand p {
+            color: var(--primary);
+            font-weight: 600;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .version {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        h2 {
+            font-size: 22px;
+            font-weight: 700;
+            margin: 40px 0 20px;
+            color: #111827;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        h2::before {
+            content: '';
+            display: block;
+            width: 4px;
+            height: 24px;
+            background: var(--primary);
+            border-radius: 2px;
+        }
+
+        p { margin-bottom: 16px; font-size: 15px; color: #374151; }
+
+        ul { margin-bottom: 24px; padding-left: 20px; }
+        li { margin-bottom: 8px; font-size: 15px; }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            color: #dc2626;
+        }
+
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 20px 0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .env-block {
+            border-left: 4px solid var(--primary);
+            background: #f8fafc;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .footer {
+            margin-top: 60px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        @media print {
+            body { padding: 0; background: white; }
+            .container { box-shadow: none; border: none; width: 100%; max-width: 100%; padding: 0; }
+            pre { white-space: pre-wrap; word-wrap: break-word; }
+            .no-print { display: none; }
+        }
+
+        .badge {
+            background: #e0e7ff;
+            color: #4338ca;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="brand">
+                <p>Official Project Documentation</p>
+                <h1>1092 Assist: AI Voice Agent</h1>
+            </div>
+            <div class="version">v1.0.0 — Production Ready</div>
+        </header>
+
+        <p>This guide provides comprehensive instructions to deploy and run the 1092 Assist AI Voice Agent, a production-grade multilingual system built for the Karnataka Government Helpline.</p>
+
+        <h2>Prerequisites</h2>
+        <ul>
+            <li><strong>Node.js:</strong> Version 18.x or higher is required.</li>
+            <li><strong>PostgreSQL:</strong> A running instance (Local or via Render/ElephantSQL).</li>
+            <li><strong>Redis:</strong> Required for conversational session persistence.</li>
+            <li><strong>Twilio Account:</strong> With an active phone number for Voice webhooks.</li>
+            <li><strong>Groq & NVIDIA API Keys:</strong> For the hybrid Llama-3/Sarvam-M AI engine.</li>
+        </ul>
+
+        <h2>1. Environment Setup</h2>
+        <p>Create a file named <code>.env</code> in the project root and configure the following parameters:</p>
+        <div class="env-block">
+<pre>
+# Telephony Configuration
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=your_auth_token_here
+TWILIO_PHONE_NUMBER=+1234567890
+
+# AI Models (Hybrid Engine)
+GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxxx
+SARVAM_API_KEY=your_sarvam_api_key_here
+
+# Database & Infrastructure
+DATABASE_URL=postgresql://user:pass@host:5432/dbname
+REDIS_URL=redis://default:pass@host:port
+PUBLIC_URL=https://your-domain.com
+</pre>
+        </div>
+
+        <h2>2. Installation & Initialization</h2>
+        <p>Run the following commands in sequence to install dependencies and prepare the environment:</p>
+<pre>
+# Install all required packages
+npm install
+
+# Build the project (if using TypeScript/Vite)
+npm run build
+</pre>
+
+        <h2>3. Webhook Integration</h2>
+        <p>To receive calls, you must point your Twilio phone number to the application endpoint:</p>
+        <ul>
+            <li><strong>Endpoint:</strong> <code>{PUBLIC_URL}/api/call/incoming</code></li>
+            <li><strong>Method:</strong> HTTP POST</li>
+            <li><strong>Fallbacks:</strong> Ensure status callback is set to <code>/api/call/status</code> to track active calls accurately.</li>
+        </ul>
+
+        <h2>4. Execution Modes</h2>
+        <p>The system supports both development and production execution modes:</p>
+        <div style="display: flex; gap: 20px;">
+            <div style="flex: 1; padding: 15px; border: 1px solid var(--border); border-radius: 8px;">
+                <span class="badge">Development</span>
+                <p style="margin-top: 10px;"><code>npm run dev</code></p>
+                <p style="font-size: 12px; color: var(--text-muted);">Enables hot-reloading and debug logging.</p>
+            </div>
+            <div style="flex: 1; padding: 15px; border: 1px solid var(--border); border-radius: 8px;">
+                <span class="badge">Production</span>
+                <p style="margin-top: 10px;"><code>npm start</code></p>
+                <p style="font-size: 12px; color: var(--text-muted);">Optimized performance with cluster support.</p>
+            </div>
+        </div>
+
+        <h2>5. Operational Dashboard</h2>
+        <p>Access the **Agent Panel** at <code>/dashboard</code> to monitor live telemetry:</p>
+        <ul>
+            <li><strong>Live Call Monitor:</strong> Real-time emotion and intent analysis.</li>
+            <li><strong>Outbound Dialer:</strong> Trigger AI calls for live demonstrations.</li>
+            <li><strong>Feedback Loop:</strong> Improve AI accuracy with human-in-the-loop corrections.</li>
+        </ul>
+
+        <div class="footer">
+            &copy; 2026 1092 Helpline Project — Built for Advanced Agentic Coding Submission.
+        </div>
+    </div>
+
+    <div class="no-print" style="text-align: center; margin-top: 20px; font-size: 13px; color: #666;">
+        Press <strong>Ctrl + P</strong> to save this document as a PDF.
+    </div>
+</body>
+</html>

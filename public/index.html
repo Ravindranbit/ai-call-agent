@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1092 Assist | Empathetic AI for Citizen Services</title>
+    <meta name="description" content="Production-grade multilingual AI voice agent for the Karnataka Government 1092 Helpline.">
+    <link rel="stylesheet" href="landing.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+    <nav>
+        <div class="container">
+            <div class="logo">
+                <i class="fas fa-headset"></i>
+                <span>1092 Assist</span>
+            </div>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#demo">System Preview</a>
+                <a href="#stack">Architecture</a>
+            </div>
+            <a href="/dashboard" class="btn btn-primary">Go to Dashboard</a>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <div class="hero-glow"></div>
+        <div class="container">
+            <span class="section-tag">Empathetic AI Architecture</span>
+            <h1>Empathetic AI for <br>Citizen Services</h1>
+            <p>Moving beyond static IVRs. A production-grade multilingual voice agent built for the 1092 Karnataka Helpline, prioritizing verified understanding over speed.</p>
+            <div class="hero-btns">
+                <a href="/dashboard" class="btn btn-primary">Open Dashboard</a>
+                <a href="#features" class="btn btn-outline">Explore Features</a>
+            </div>
+        </div>
+    </header>
+
+    <section id="features" class="features">
+        <div class="container">
+            <span class="section-tag">Capabilities</span>
+            <h2 class="section-title">Built for Real-World Complexity</h2>
+            <p class="section-desc">Traditional systems fail on accents, dialects, and high-stress situations. 1092 Assist is designed to listen, confirm, and care.</p>
+            
+            <div class="features-grid">
+                <div class="feature-card">
+                    <i class="fas fa-language"></i>
+                    <h3>Multilingual & Dialect Aware</h3>
+                    <p>Native support for Kannada, Hindi, Tamil, and English. Fine-tuned to recognize local Karnataka dialects and colloquialisms.</p>
+                </div>
+                <div class="feature-card">
+                    <i class="fas fa-check-double"></i>
+                    <h3>Verification Loop</h3>
+                    <p>Eliminates AI hallucinations by restating the citizen's problem and asking for confirmation before triggering any government action.</p>
+                </div>
+                <div class="feature-card">
+                    <i class="fas fa-heartbeat"></i>
+                    <h3>Emotion & Urgency</h3>
+                    <p>Real-time sentiment analysis detects distress, anger, or fear, automatically flagging high-urgency medical or fire emergencies.</p>
+                </div>
+                <div class="feature-card">
+                    <i class="fas fa-user-shield"></i>
+                    <h3>Human-in-the-Loop</h3>
+                    <p>Seamless escalation to human agents when confidence drops or distress is high, ensuring no citizen is left unheard.</p>
+                </div>
+                <div class="feature-card">
+                    <i class="fas fa-database"></i>
+                    <h3>Zero Hallucination</h3>
+                    <p>Strictly bounded by a verified Government Knowledge Base. The AI only answers what it knows to be true.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="live-indicator" style="display: inline-block; width: 8px; height: 8px; background: #ef4444; border-radius: 50%; margin-right: 5px; animation: pulse 2s infinite;"></div>
+                    <i class="fas fa-chart-line"></i>
+                    <h3>Real-time Ops Panel</h3>
+                    <p>A premium administrative dashboard for live call monitoring, transcript reviews, and instant AI behavior tuning.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="demo" class="preview-section">
+        <div class="container">
+            <div class="preview-container">
+                <div class="preview-content">
+                    <span class="section-tag">System Preview</span>
+                    <h2 class="section-title">Verified Interaction</h2>
+                    <p class="section-desc">Observe how 1092 Assist manages a distress call with high-precision intent verification and context retention.</p>
+                    <ul style="list-style: none; margin-bottom: 2rem; display: flex; flex-direction: column; gap: 1rem;">
+                        <li><i class="fas fa-check-circle" style="color: var(--primary); margin-right: 10px;"></i> Context-aware session persistence</li>
+                        <li><i class="fas fa-check-circle" style="color: var(--primary); margin-right: 10px;"></i> Dynamic language switching</li>
+                        <li><i class="fas fa-check-circle" style="color: var(--primary); margin-right: 10px;"></i> Instant emergency classification</li>
+                    </ul>
+                    <a href="/dashboard" class="btn btn-primary">Experience live calls</a>
+                </div>
+                <div class="phone-mockup">
+                    <div class="phone-screen">
+                        <div class="call-header">
+                            <div class="avatar">
+                                <i class="fas fa-headset"></i>
+                            </div>
+                            <h3>1092 Assist</h3>
+                            <p style="font-size: 0.7rem; color: var(--primary);">ACTIVE CALL | 01:24</p>
+                        </div>
+                        <div class="chat-area">
+                            <div class="bubble bubble-ai">
+                                Namaste, I am your 1092 Digital Assistant. How can I help you today?
+                            </div>
+                            <div class="bubble bubble-user">
+                                Help! My street is flooded near Malleshwaram 8th cross... water is entering my house!
+                            </div>
+                            <div class="bubble bubble-ai">
+                                I understand. You are reporting a flooding emergency at Malleshwaram 8th Cross. Is that correct?
+                            </div>
+                            <div class="status-pills">
+                                <span class="pill pill-active">EMERGENCY: HIGH</span>
+                                <span class="pill">LOC: Malleshwaram</span>
+                                <span class="pill">EMOTION: Distress</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="stack" class="architecture-flow">
+        <div class="container">
+            <div style="text-align: center; margin-bottom: 4rem;">
+                <span class="section-tag">System Design</span>
+                <h2 class="section-title">Digital Helpline Ecosystem</h2>
+                <p class="section-desc" style="margin: 0 auto;">A production-grade architecture designed for ultra-low latency and verified human-in-the-loop escalation.</p>
+            </div>
+
+            <div class="flow-container">
+                <!-- SVG Connections -->
+                <svg class="flow-svg" viewBox="0 0 1200 500" preserveAspectRatio="none">
+                    <!-- Main Flow Path -->
+                    <path id="mainPath" class="flow-path" d="M100,250 C300,250 300,100 500,100 S700,400 900,400 S1100,250 1100,250" />
+                    <path class="flow-path-glow" d="M100,250 C300,250 300,100 500,100 S700,400 900,400 S1100,250 1100,250" />
+                    
+                    <!-- Animated Particle -->
+                    <circle r="4" class="flow-particle">
+                        <animateMotion dur="4s" repeatCount="indefinite" path="M100,250 C300,250 300,100 500,100 S700,400 900,400 S1100,250 1100,250" />
+                    </circle>
+                    <circle r="4" class="flow-particle">
+                        <animateMotion dur="4s" begin="2s" repeatCount="indefinite" path="M100,250 C300,250 300,100 500,100 S700,400 900,400 S1100,250 1100,250" />
+                    </circle>
+                </svg>
+
+                <!-- Nodes -->
+                <div class="flow-node node-1" style="transform: translateY(0px);">
+                    <div class="node-icon"><i class="fas fa-phone-alt"></i></div>
+                    <div class="node-info">
+                        <div class="node-label">Citizen</div>
+                        <div class="node-sub">Distress Call</div>
+                    </div>
+                </div>
+
+                <div class="flow-node node-2" style="transform: translateY(-150px);">
+                    <div class="node-icon"><i class="fas fa-network-wired"></i></div>
+                    <div class="node-info">
+                        <div class="node-label">Twilio</div>
+                        <div class="node-sub">Stream & Webhook</div>
+                    </div>
+                </div>
+
+                <div class="flow-node node-3" style="transform: translateY(0px);">
+                    <div class="node-icon"><i class="fas fa-brain"></i></div>
+                    <div class="node-info">
+                        <div class="node-label">1092 AI Engine</div>
+                        <div class="node-sub">Llama-3 & Sarvam</div>
+                    </div>
+                </div>
+
+                <div class="flow-node node-4" style="transform: translateY(150px);">
+                    <div class="node-icon"><i class="fas fa-database"></i></div>
+                    <div class="node-info">
+                        <div class="node-label">Data Layer</div>
+                        <div class="node-sub">Redis & Postgres</div>
+                    </div>
+                </div>
+
+                <div class="flow-node node-5" style="transform: translateY(0px);">
+                    <div class="node-icon"><i class="fas fa-user-shield"></i></div>
+                    <div class="node-info">
+                        <div class="node-label">Agent Panel</div>
+                        <div class="node-sub">Human-in-the-Loop</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 1092 Assist. Built for Karnataka State Helpline.</p>
+            <div style="margin-top: 1rem; display: flex; justify-content: center; gap: 1rem;">
+                <a href="#" style="color: var(--text-muted);"><i class="fab fa-github"></i></a>
+                <a href="#" style="color: var(--text-muted);"><i class="fab fa-linkedin"></i></a>
+            </div>
+        </div>
+    </footer>
+
+    <style>
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.5; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+
+    <script>
+        // Simple scroll reveal
+        const observerOptions = {
+            threshold: 0.1
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.style.opacity = '1';
+                    entry.target.style.transform = 'translateY(0)';
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.feature-card, .preview-content, .phone-mockup').forEach(el => {
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(20px)';
+            el.style.transition = 'all 0.6s ease-out';
+            observer.observe(el);
+        });
+    </script>
+</body>
+</html>

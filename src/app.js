@@ -179,11 +179,13 @@ app.get('/api/agent/feedback/stats', async (req, res) => {
   }
 });
 
-// ──────────────────────────────────────────────────────────────
+// Serve landing page and other static assets
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
-app.get('/', (req, res) => res.redirect('/dashboard'));
-
-// ──────────────────────────────────────────────────────────────
+// Root route (now served by express.static above, but keeping this as a fallback if needed)
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+});
 // HEALTH CHECK — For monitoring/load balancers
 // ──────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
