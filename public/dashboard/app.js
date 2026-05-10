@@ -23,6 +23,7 @@ const ICONS = {
 
 let currentTab = 'overview';
 let autoRefreshTimer = null;
+let allCalls = []; // Store calls for filtering
 
 async function fetchJSON(path) {
   const res = await fetch(path);
@@ -39,11 +40,12 @@ async function loadAll() {
       fetchJSON(`/api/dashboard/calls?limit=${document.getElementById('callLimit')?.value || 50}`)
     ]);
     setDbStatus('connected');
+    allCalls = calls.calls || [];
     renderOverview(stats, memMetrics);
     renderEventStats(events);
-    renderCalls(calls.calls || []);
+    renderCalls(allCalls);
     renderIntents(stats);
-    renderEscalations(stats, calls.calls || []);
+    renderEscalations(stats, allCalls);
     document.getElementById('lastUpdated').textContent = `Updated ${new Date().toLocaleTimeString()}`;
   } catch (err) {
     console.error('Dashboard load error:', err);
@@ -128,6 +130,17 @@ function renderCalls(calls) {
       <td>${urgentBadge}</td><td>${escBadge}</td>
       <td style="font-size:11.5px;color:var(--text-muted)">${started}</td></tr>`;
   }).join('');
+}
+
+// ── SEARCH LOGIC ──
+function filterCalls() {
+  const query = document.getElementById('callSearch').value.toLowerCase();
+  const filtered = allCalls.filter(c => 
+    (c.call_sid || '').toLowerCase().includes(query) || 
+    (c.from_number || '').toLowerCase().includes(query) ||
+    (c.primary_intent || '').toLowerCase().includes(query)
+  );
+  renderCalls(filtered);
 }
 
 // ── CALL DETAIL MODAL ──
@@ -405,6 +418,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('callModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) document.getElementById('callModal').classList.remove('open'); });
   document.getElementById('menuToggle').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
   document.getElementById('refreshAgent')?.addEventListener('click', loadLiveCalls);
+  document.getElementById('callSearch')?.addEventListener('input', filterCalls);
 
   // Dialer Logic
   document.getElementById('makeCallBtn')?.addEventListener('click', async () => {
@@ -461,3 +475,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (currentTab === 'agent') loadLiveCalls();
   }, 15000);
 });
+
+// CSS Animations helper
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+`;
+document.head.appendChild(style);

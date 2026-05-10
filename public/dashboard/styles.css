@@ -57,6 +57,23 @@ body {
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  position: relative;
+}
+
+.dashboard-bg-glow {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: 
+    radial-gradient(circle at 80% 20%, rgba(16, 185, 129, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.05) 0%, transparent 40%);
+  pointer-events: none;
+  z-index: -1;
+  animation: glowFloat 20s ease-in-out infinite alternate;
+}
+
+@keyframes glowFloat {
+  from { opacity: 0.5; transform: scale(1); }
+  to { opacity: 0.8; transform: scale(1.1); }
 }
 
 /* ── SIDEBAR ───────────────────────────────────────────────── */
@@ -350,6 +367,7 @@ body {
   font-weight: 800;
   letter-spacing: -1.2px;
   line-height: 1.1;
+  font-family: 'Outfit', sans-serif;
 }
 
 .kpi-label {
