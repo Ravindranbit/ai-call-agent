@@ -3,14 +3,14 @@
 // Real-time analytics with PostgreSQL-backed data
 // ══════════════════════════════════════════════════════════════
 
-const COLORS = ['#818cf8', '#60a5fa', '#22d3ee', '#34d399', '#fbbf24', '#f87171', '#c084fc', '#fb923c'];
+const COLORS = ['#10b981', '#3b82f6', '#06b6d4', '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899', '#6366f1'];
 const LANG_NAMES = { 'en-IN': 'English', 'hi-IN': 'Hindi', 'ta-IN': 'Tamil', 'kn-IN': 'Kannada' };
 const EMOTION_COLORS = {
-  neutral: '#818cf8', happy: '#34d399', distress: '#fbbf24',
-  high_distress: '#f87171', angry: '#f87171', confused: '#c084fc',
-  fear: '#fb923c', urgency: '#ef4444'
+  neutral: '#3b82f6', happy: '#10b981', distress: '#f59e0b',
+  high_distress: '#ef4444', angry: '#ef4444', confused: '#8b5cf6',
+  fear: '#f59e0b', urgency: '#ef4444'
 };
-const CONFIDENCE_COLORS = { low: '#f87171', medium: '#fbbf24', high: '#34d399' };
+const CONFIDENCE_COLORS = { low: '#ef4444', medium: '#f59e0b', high: '#10b981' };
 
 const ICONS = {
   inbox: '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
